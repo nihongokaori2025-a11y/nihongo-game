@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>にほんご たんごちょう</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    .animate-pop-in { animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const initialWords = [
+      { id: 1, japanese: 'りんご', hiragana: 'りんご', english: 'Apple', imageUrl: null, isLoading: false },
+      ...Array.from({ length: 9 }, (_, i) => ({
+        id: i + 2, japanese: '', hiragana: '', english: '', imageUrl: null, isLoading: false
+      }))
+    ];
+
+    function App() {
+      const [view, setView] = useState('editor');
+      const [title, setTitle] = useState("にほんご たんごちょう");
+      const [words, setWords] = useState(initialWords);
+      const [message, setMessage] = useState({ text: '', type: '' });
+      const [showShareModal, setShowShareModal] = useState(false);
+      const [cloudUrl, setCloudUrl] = useState('');
+      const [studentUrl, setStudentUrl] = useState('');
+      const qrRef = useRef(null);
+      const [shuffledImages, setShuffledImages] = useState([]);
+      const [shuffledTexts, setShuffledTexts] = useState([]);
+      const [selectedImage, setSelectedImage] = useState(null);
+      const [selectedText, setSelectedText] = useState(null);
+      const [score, setScore] = useState(0);
+      const [gameCompleted, setGameCompleted] = useState(false);
+
+      // URLからゲームを読み込む処理
+      useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const playUrl = urlParams.get('play');
+        if (playUrl) {
+          loadGameFromUrl(playUrl);
+        }
+      }, []);
+
+      const showMessageText = (text, type = 'info') => {
+        setMessage({ text, type });
+        setTimeout(() => setMessage({ text: '', type: '' }), 5000);
+      };
+
+      const loadGameFromUrl = async (rawUrl) => {
+        showMessageText("ゲームデータを読み込んでいます...", "info");
+        try {
+          // Google DriveのURLを直接ダウンロード可能な形式に変換
+          let fetchUrl = rawUrl;
+          if (rawUrl.includes('drive.google.com/file/d/')) {
+            const fileId = rawUrl.split('/d/')[1].split('/')[0];
+            fetchUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+          }
+
+          const response = await fetch(fetchUrl);
+          if (!response.ok) throw new Error("Network response was not ok");
+          const importedData = await response.json();
+
+          if (importedData && Array.isArray(importedData.words)) {
+            setTitle(importedData.title || "にほんご たんごちょう");
+            setWords(importedData.words);
+            showMessageText("ゲームを読み込みました！", "success");
+            startGameWithData(importedData.words);
+          } else {
+            throw new Error("Invalid format");
+          }
+        } catch (error) {
+          showMessageText("データの読み込みに失敗しました。", "error");
+        }
+      };
+
+      const handleExportData = () => {
+        const dataToExport = { title, words: words.map(w => ({ ...w, isLoading: false })) };
+        const jsonStr = JSON.stringify(dataToExport);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${title || '単語帳データ'}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showMessageText("セーブしました！Googleドライブにアップロードしてください。", "success");
+      };
+
+      const generateStudentUrl = () => {
+        if (!cloudUrl) {
+          showMessageText("Googleドライブの共有リンクを入力してください。", "error");
+          return;
+        }
+        const baseUrl = window.location.href.split('?')[0];
+        const finalUrl = `${baseUrl}?play=${encodeURIComponent(cloudUrl)}`;
+        setStudentUrl(finalUrl);
+        
+        // QRコード生成
+        setTimeout(() => {
+          if (qrRef.current) {
+            qrRef.current.innerHTML = "";
+            new QRCode(qrRef.current, {
+              text: finalUrl,
+              width: 150,
+              height: 150,
+            });
+          }
+        }, 100);
+        showMessageText("留学生用のQRコードを作成しました！", "success");
+      };
+
+      const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+
+      const startGameWithData = (playWords) => {
+        const playableWords = playWords.filter(w => w.japanese && w.imageUrl);
+        if (playableWords.length < 2) return;
+        setShuffledImages(shuffleArray(playableWords.map(w => ({ id: w.id, url: w.imageUrl, matched: false }))));
+        setShuffledTexts(shuffleArray(playableWords.map(w => ({ id: w.id, text: w.japanese, hiragana: w.hiragana, matched: false }))));
+        setView('game');
+      };
+
+      const startGame = () => {
+        const playableWords = words.filter(w => w.japanese && w.imageUrl);
+        if (playableWords.length < 2) {
+          showMessageText("画像付きの単語が2つ以上必要です。", "error");
+          return;
+        }
+        startGameWithData(playableWords);
+      };
+
+      const handleImageClick = (id) => {
+        if (shuffledImages.find(i => i.id === id).matched) return;
+        setSelectedImage(prev => prev === id ? null : id);
+      };
+
+      const handleTextClick = (txtObj) => {
+        if (shuffledTexts.find(t => t.id === txtObj.id).matched) return;
+        if ('speechSynthesis' in window) {
+          const utterance = new SpeechSynthesisUtterance(txtObj.text);
+          utterance.lang = 'ja-JP';
+          window.speechSynthesis.speak(utterance);
+        }
+        setSelectedText(prev => prev === txtObj.id ? null : txtObj.id);
+      };
+
+      useEffect(() => {
+        if (selectedImage !== null && selectedText !== null) {
+          if (selectedImage === selectedText) {
+            setTimeout(() => {
+              setShuffledImages(prev => prev.map(img => img.id === selectedImage ? { ...img, matched: true } : img));
+              setShuffledTexts(prev => prev.map(txt => txt.id === selectedText ? { ...txt, matched: true } : txt));
+              setSelectedImage(null);
+              setSelectedText(null);
+              setScore(prev => prev + 1);
+            }, 500);
+          } else {
+            setTimeout(() => {
+              setSelectedImage(null);
+              setSelectedText(null);
+            }, 800);
+          }
+        }
+      }, [selectedImage, selectedText]);
+
+      useEffect(() => {
+        if (shuffledImages.length > 0 && score === shuffledImages.length) {
+          setGameCompleted(true);
+        }
+      }, [score, shuffledImages.length]);
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <header className="bg-white shadow-sm px-4 py-4 flex justify-between items-center border-b-4 border-indigo-100">
+            <h1 className="text-xl font-black text-gray-800">✨ 単語帳＆ゲームメーカー</h1>
+            <div className="flex gap-2">
+              {view === 'editor' ? (
+                <>
+                  <button onClick={handleExportData} className="bg-indigo-50 text-indigo-700 font-bold px-4 py-2 rounded-full">💾 セーブ</button>
+                  <button onClick={() => setShowShareModal(true)} className="bg-green-500 text-white font-bold px-4 py-2 rounded-full shadow-sm">📱 学生に配る(QR)</button>
+                </>
+              ) : (
+                <button onClick={() => setView('editor')} className="bg-gray-100 text-gray-600 font-bold px-4 py-2 rounded-full">◀️ もどる</button>
+              )}
+            </div>
+          </header>
+
+          {message.text && (
+            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-pop-in bg-white px-6 py-4 rounded-xl shadow-xl font-bold text-blue-600 border-2 border-blue-200">
+              {message.text}
+            </div>
+          )}
+
+          {showShareModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                <h2 className="text-xl font-bold mb-4">🔗 留学生にゲームを配る</h2>
+                <ol className="text-sm space-y-2 mb-4 text-gray-600">
+                  <li>1. 「セーブ」したファイルをGoogleドライブに保存</li>
+                  <li>2. ファイルのアクセス権を「リンクを知っている全員」に変更</li>
+                  <li>3. リンクをコピーして、下に入力してください</li>
+                </ol>
+                <input
+                  type="text"
+                  placeholder="https://drive.google.com/file/d/..."
+                  className="w-full p-2 border rounded mb-4"
+                  value={cloudUrl}
+                  onChange={(e) => setCloudUrl(e.target.value)}
+                />
+                <button onClick={generateStudentUrl} className="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg mb-4">QRコードを作成</button>
+                
+                {studentUrl && (
+                  <div className="flex flex-col items-center p-4 bg-gray-50 rounded-xl">
+                    <div ref={qrRef} className="bg-white p-2 rounded-xl shadow-sm mb-2"></div>
+                    <p className="text-xs text-gray-500 text-center">このQRコードを留学生に読み取ってもらってください</p>
+                  </div>
+                )}
+                
+                <button onClick={() => setShowShareModal(false)} className="w-full mt-4 text-gray-500 font-bold">閉じる</button>
+              </div>
+            </div>
+          )}
+
+          {view === 'editor' && (
+            <main className="flex-1 flex flex-col items-center justify-center p-8 bg-indigo-50/50">
+              <div className="max-w-md text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4">準備完了です！</h2>
+                <p className="text-gray-600 mb-6">プログラムはHTMLファイルに正常に書き出されました。GitHub Pagesにアップロードすれば、世界中どこからでもアクセスできるようになります。</p>
+                <button onClick={startGame} className="bg-gradient-to-r from-orange-400 to-pink-500 text-white font-black px-8 py-3 rounded-xl shadow-md hover:scale-105 transition-transform">
+                  ▶️ テストプレイする
+                </button>
+              </div>
+            </main>
+          )}
+
+          {view === 'game' && (
+             <main className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 bg-[radial-gradient(circle_at_center,_#f8fafc_0%,_#e2e8f0_100%)] h-[calc(100vh-76px)] overflow-hidden">
+               {gameCompleted ? (
+                 <div className="w-full flex flex-col items-center justify-center bg-white/80 rounded-3xl p-6 shadow-xl border-4 border-yellow-300">
+                   <div className="text-6xl mb-4">🏆</div>
+                   <h2 className="text-4xl font-black text-gray-800 mb-6">クリア！</h2>
+                   <button onClick={startGame} className="bg-green-500 text-white px-8 py-4 rounded-full font-black text-xl hover:scale-105 transition-all">
+                     🔄 もういちど あそぶ
+                   </button>
+                 </div>
+               ) : (
+                 <>
+                   <div className="w-full md:w-1/2 bg-white/60 rounded-3xl p-4 shadow-sm border-2 border-indigo-100 overflow-y-auto">
+                     <h3 className="text-center font-bold text-indigo-400 mb-4">1. イラストをえらぼう</h3>
+                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                       {shuffledImages.map((img) => (
+                         <button
+                           key={`img-${img.id}`}
+                           onClick={() => handleImageClick(img.id)}
+                           disabled={img.matched}
+                           className={`aspect-square rounded-xl border-4 overflow-hidden bg-white ${img.matched ? 'opacity-30 border-gray-200' : selectedImage === img.id ? 'border-blue-500' : 'border-transparent'}`}
+                         >
+                           <img src={img.url} className="w-full h-full object-cover p-2" />
+                         </button>
+                       ))}
+                     </div>
+                   </div>
+                   <div className="w-full md:w-1/2 bg-white/60 rounded-3xl p-4 shadow-sm border-2 border-orange-100 overflow-y-auto">
+                     <h3 className="text-center font-bold text-orange-400 mb-4">2. あっている ことばを えらぼう</h3>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                       {shuffledTexts.map((txt) => (
+                         <button
+                           key={`txt-${txt.id}`}
+                           onClick={() => handleTextClick(txt)}
+                           disabled={txt.matched}
+                           className={`py-6 px-4 rounded-xl border-4 flex flex-col items-center justify-center bg-white ${txt.matched ? 'opacity-30 border-gray-200' : selectedText === txt.id ? 'border-orange-500' : 'border-transparent'}`}
+                         >
+                           <span className="text-sm font-bold text-gray-400">{txt.hiragana}</span>
+                           <span className="text-2xl font-black text-gray-800">{txt.text}</span>
+                         </button>
+                       ))}
+                     </div>
+                   </div>
+                 </>
+               )}
+             </main>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
