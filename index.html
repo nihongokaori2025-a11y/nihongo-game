@@ -180,4 +180,57 @@ return (
 )}
 {view === 'editor' && (
 <main className="flex-1 flex flex-col items-center justify-center p-8 bg-indigo-50/50">
-<div className="max-w-md text-center bg-white p-8
+<div className="max-w-md text-center bg-white p-8 rounded-2xl shadow-sm border border-gray-200">
+<h2 className="text-2xl font-bold text-gray-800 mb-4">準備完了です！</h2>
+<p className="text-gray-600 mb-6">プログラムは正常に読み込まれました。このURLからいつでもゲーム作成を再開できます。</p>
+<button onClick={startGame} className="bg-gradient-to-r from-orange-400 to-pink-500 text-white font-black px-8 py-3 rounded-xl shadow-md hover:scale-105 transition-transform">
+▶️ テストプレイする
+</button>
+</div>
+</main>
+)}
+{view === 'game' && (
+<main className="flex-1 flex flex-col md:flex-row p-4 md:p-8 gap-4 bg-[radial-gradient(circle_at_center,_#f8fafc_0%,_#e2e8f0_100%)] h-[calc(100vh-76px)] overflow-hidden">
+{gameCompleted ? (
+<div className="w-full flex flex-col items-center justify-center bg-white/80 rounded-3xl p-6 shadow-xl border-4 border-yellow-300">
+<div className="text-6xl mb-4">🏆</div>
+<h2 className="text-4xl font-black text-gray-800 mb-6">クリア！</h2>
+<button onClick={startGame} className="bg-green-500 text-white px-8 py-4 rounded-full font-black text-xl hover:scale-105 transition-all">
+🔄 もういちど あそぶ
+</button>
+</div>
+) : (
+<>
+<div className="w-full md:w-1/2 bg-white/60 rounded-3xl p-4 shadow-sm border-2 border-indigo-100 overflow-y-auto">
+<h3 className="text-center font-bold text-indigo-400 mb-4">1. イラストをえらぼう</h3>
+<div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+{shuffledImages.map((img) => (
+<button key={`img-${img.id}`} onClick={() => handleImageClick(img.id)} disabled={img.matched} className={`aspect-square rounded-xl border-4 overflow-hidden bg-white ${img.matched ? 'opacity-30 border-gray-200' : selectedImage === img.id ? 'border-blue-500' : 'border-transparent'}`}>
+<img src={img.url} className="w-full h-full object-cover p-2" />
+</button>
+))}
+</div>
+</div>
+<div className="w-full md:w-1/2 bg-white/60 rounded-3xl p-4 shadow-sm border-2 border-orange-100 overflow-y-auto">
+<h3 className="text-center font-bold text-orange-400 mb-4">2. あっている ことばを えらぼう</h3>
+<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+{shuffledTexts.map((txt) => (
+<button key={`txt-${txt.id}`} onClick={() => handleTextClick(txt)} disabled={txt.matched} className={`py-6 px-4 rounded-xl border-4 flex flex-col items-center justify-center bg-white ${txt.matched ? 'opacity-30 border-gray-200' : selectedText === txt.id ? 'border-orange-500' : 'border-transparent'}`}>
+<span className="text-sm font-bold text-gray-400">{txt.hiragana}</span>
+<span className="text-2xl font-black text-gray-800">{txt.text}</span>
+</button>
+))}
+</div>
+</div>
+</>
+)}
+</main>
+)}
+</div>
+);
+}
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
